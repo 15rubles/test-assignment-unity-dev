@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -5,22 +6,18 @@ using UnityEngine.Networking;
 
 public class EventService : MonoBehaviour
 {
-    [SerializeField]
-    private float cooldownBeforeSend = 3f; // Кулдаун в секундах
-    private readonly string serverUrl = "SERVER_URL"; // URL сервера
+    private const float COUNTDOWN_BEFORE_SEND = 3f;
+    private const string SERVER_URL = "SERVER_URL";
 
-    [SerializeField]
     private List<EventData> pendingEvents = new();
-    private Coroutine cooldownCoroutine;
-    [SerializeField]
-    private bool isRequestIsCreatedButCoroutineDontEnd = false;
+    private Coroutine countdownCoroutine;
+    private bool isCountdownEnded = false;
 
     private void Start()
     {
-        // Начинаем кулдаун только если есть хотя бы одно событие
         if (pendingEvents.Count > 0)
         {
-            cooldownCoroutine = StartCoroutine(CooldownCoroutine());
+            countdownCoroutine = StartCoroutine(CountdownCoroutine());
         }
     }
 
@@ -29,49 +26,44 @@ public class EventService : MonoBehaviour
         EventData eventData = new(type, data);
         pendingEvents.Add(eventData);
 
-
-        if (cooldownCoroutine == null)  // Начинаем корутину, если еще не запущена
+        if (countdownCoroutine == null)
         {
-            cooldownCoroutine = StartCoroutine(CooldownCoroutine());
+            countdownCoroutine = StartCoroutine(CountdownCoroutine());
         }
-        else if (isRequestIsCreatedButCoroutineDontEnd) // Если корутина уже создала request, то ждем пока она закончится и создаем новую корутину
+        else if (isCountdownEnded)
         {
-            StartCoroutine(WaitForCooldown());
+            StartCoroutine(WaitForCountdown());
         }
     }
 
-    private IEnumerator WaitForCooldown()
+    private IEnumerator WaitForCountdown()
     {
-        while (cooldownCoroutine != null)
+        while (countdownCoroutine != null)
         {
             yield return null;
         }
 
-        cooldownCoroutine = StartCoroutine(CooldownCoroutine());
+        countdownCoroutine = StartCoroutine(CountdownCoroutine());
     }
 
-    private IEnumerator CooldownCoroutine()
+    private IEnumerator CountdownCoroutine()
     {
-        isRequestIsCreatedButCoroutineDontEnd = false;
+        isCountdownEnded = false;
         while (pendingEvents.Count > 0)
         {
-            yield return new WaitForSeconds(cooldownBeforeSend);
+            yield return new WaitForSecondsRealtime(COUNTDOWN_BEFORE_SEND);
+            isCountdownEnded = true;
             yield return SendEventsCoroutine();
         }
 
-        // Кулдаун завершается, так как список событий пуст
-        cooldownCoroutine = null;
+        countdownCoroutine = null;
     }
 
     private IEnumerator SendEventsCoroutine()
     {
-        EventData[] eventsArray = pendingEvents.ToArray();
-        pendingEvents.Clear();
-        isRequestIsCreatedButCoroutineDontEnd = true;
+        string jsonData = JsonUtility.ToJson(new EventBatch(pendingEvents));
 
-        string jsonData = JsonUtility.ToJson(new EventBatch(eventsArray));
-        Debug.Log(jsonData);
-        using (UnityWebRequest unityWebRequest = UnityWebRequest.Post(serverUrl, jsonData))
+        using (UnityWebRequest unityWebRequest = UnityWebRequest.Post(SERVER_URL, jsonData))
         {
             unityWebRequest.SetRequestHeader("Content-Type", "application/json");
 
@@ -80,36 +72,36 @@ public class EventService : MonoBehaviour
             if (unityWebRequest.result == UnityWebRequest.Result.Success)
             {
                 Debug.Log("Events sent successfully.");
+                pendingEvents.Clear();
             }
             else
             {
                 Debug.LogWarning("Failed to send events. They will be retried later.");
-                pendingEvents.AddRange(eventsArray); // Добавляет данные в pending чтобы их не потерять
             }
         }
     }
 
-    [System.Serializable]
+    [Serializable]
     private class EventData
     {
-        public string type;
-        public string data;
+        public string Type;
+        public string Data;
 
         public EventData(string type, string data)
         {
-            this.type = type;
-            this.data = data;
+            this.Type = type;
+            this.Data = data;
         }
     }
 
-    [System.Serializable]
+    [Serializable]
     private class EventBatch
     {
-        public EventData[] events;
+        public List<EventData> Events;
 
-        public EventBatch(EventData[] events)
+        public EventBatch(List<EventData> events)
         {
-            this.events = events;
+            this.Events = events;
         }
     }
 }

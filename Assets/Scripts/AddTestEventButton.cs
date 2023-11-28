@@ -2,7 +2,6 @@ using UnityEngine;
 
 public class AddTestEventButton : MonoBehaviour
 {
-    [SerializeField]
     private int eventNumber = 0;
 
     [SerializeField]
